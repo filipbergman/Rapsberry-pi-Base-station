@@ -46,61 +46,88 @@ rfm9xT.ack_retries = 1
 counterT = 0
 
 iface= 'tun0'
-# Createand configurea TUN interface
 tun = TunTap(nic_type="Tun", nic_name="tun0")
 tun.config(ip="192.168.2.15", mask="255.255.255.0", gateway="192.168.0.1")
+
+
+this_ip = ipaddress.IPv4Address('192.168.2.15')
+this_ip_bits = format(int(this_ip), "032b")
+
+base1 = ipaddress.IPv4Address('192.168.2.16')
+base1_bits = format(int(base1), "032b")
+
+test1 = ipaddress.IPv4Address('192.168.2.2')
+test1_bits = format(int(test1), "032b")
+
+ipList = []
+ipList.append(this_ip_bits)
+ipList.append(base1_bits)
+ipList.append(test1_bits)
 
 # Set up UDP tunnel
 RECEIVER_IP = "192.168.0.170" # Should be receiver's IP on the local network
 MY_IP = "192.168.0.193" # Should be this node's IP on the local network
-UDP_PORT = 4001
+UDP_PORT = 4002
 
 tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
 rx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 rx_sock.bind((MY_IP, UDP_PORT))
 
 def exit_handler():
     tun.close()
 
-def transmit(self, message = None):
-    start_transmit = time.monotonic()
-    transmitted = []
+def transmit_message(message):
+    tx_sock.sendto(message, (RECEIVER_IP, UDP_PORT))
+
+def transmit():
 
     while True:
+        print("HELLO")
+        buf= tun.read(1024)
+        print("TUN BUFFER: ", buf)
         #buffer = bytes("startup message nr {} from pi 17 node {} ".format(counterT, rfm9xT.node), "UTF-8")
         tx_sock.sendto( buf, (RECEIVER_IP, UDP_PORT))
-        transmitted.append(len(buf))
-        if time.monotonic() - start_transmit >= 1:
-            total_time = time.monotonic() - start_transmit
-            print("1 second has passed! Transmit Bitrate: {}", np.sum(transmitted)*8/total_time)
-            start_transmit = time.monotonic()
-            transmitted = []
 
-def receive(self):
-    start_receive = time.monotonic()
-    received = []
+def receive():
     while True:
         rcvd, addr = rx_sock.recvfrom(1024)
+        
         if rcvd is not None:
-            print("Received (raw header):", [hex(x) for x in rcvd[0:4]])
-            #print("Received (raw payload): {0}".format(rcvd[4:]))
-            #print("Received RSSI: {0}".format(rfm9xR.last_rssi))
-            received.append(len(rcvd))
-            if time.monotonic() - start_receive >= 1:
-                total_time_r = time.monotonic() - start_receive
-                print("1 second has passed! Receive Bitrate: {}", np.sum(received)*8/total_time_r)
-                start_receive = time.monotonic()
-                received = []
+            # If ipv4 packet, write to tun interface:
+            
+            rcvd_hex = rcvd.hex()
+            print("hex: ", rcvd_hex[:2])
+            if rcvd_hex[:2] == "45": 
+                print("WRITE TO TUN")
+                tun.write(rcvd)
+            elif rcvd_hex[:2] == "31":
+                # if not ip packet, decode:
+                rcvd = rcvd.decode()
+                print("Handshake1")
+                handshake(rcvd[0], rcvd[1:])
+                
 
-def handshake(self, fragment, data):
+def handshake(frame_type, data):
+    print("RECEIVED")
+    print("FRAME TYPE: ", frame_type)
+    print("data: ", data)
+
+    if frame_type == "0":
+        print("\nData plane\n")
+    elif frame_type == "1":
+        print("\nControl plane\n")
+        if data not in ipList:
+            print("UNIQUE IP")
+            f = frame(frame_type, data)
+            f2 = f.frame_from_bits()
+            transmit_message(f2)
+        elif data in ipList:
+            print("IP ALREADY EXISTS")
+
 
 
 class frame:
     frame_type = 0
-    #fragment_id = 0 no need since I use small packets
-    s_ip = 0
-    d_ip = 0
     data = 0
     frame = 0
 
@@ -109,16 +136,17 @@ class frame:
         self.data = data
 
     def createFrame(self): 
-        frame = format(self.frame_type, "#b")
-        bit_data = bin(int(self.data))[2:]
-        frame += format(bit_data)
-        return frame
+        frame = format(self.frame_type, "b")
+        data_int = int(self.data)
+        data_bit = format(data_int, "032b")
+        print("DATA_BIT: ", data_bit)
+        frame += data_bit
+        return frame.encode()
 
-    def readFrame(self, new_frame):
-        bytes_frame = 0
-
-        return bytes_frame
-
+    def frame_from_bits(self):
+        frame = self.frame_type
+        frame += self.data
+        return frame.encode()
            
 if __name__ == "__main__":
     atexit.register(exit_handler)
@@ -129,11 +157,5 @@ if __name__ == "__main__":
     time.sleep(1)
     tx_process.start()
 
-    ip = ipaddress.IPv4Address('192.168.2.2')
-    f1 = frame(0, ip)
-    frame_bits = f1.createFrame()
-    transmit(frame_bits)
-
     tx_process.join()
     rx_process.join()
-    tun.close()
