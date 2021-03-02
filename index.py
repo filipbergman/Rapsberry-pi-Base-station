@@ -13,29 +13,21 @@ print("Content-Type: text/html\n")
 # For MySQL
 import MySQLdb
 conn = MySQLdb.connect('localhost', 'pi', 'pi', 'dbtest')
-# For PostgreSQL
-#import psycopg2
-#conn = psycopg2.connect(database='testdb', user='testuser', password='xxxx', host='localhost', port='5432')
 
-with conn:
-    cursor = conn.cursor()
-    # Create table
-    cursor.execute('drop table if exists cafe')
-    cursor.execute('''create table if not exists cafe (
-                        id int unsigned not null auto_increment,
-                        category enum('tea', 'coffee') not null,
-                        name varchar(50) not null,
-                        price decimal(5,2) not null,
-                        primary key (id)
-                      )''')
-    # Insert rows
-    cursor.execute('''insert into cafe (category, name, price) values
-                        ('coffee', 'Espresso', 3.19),
-                        ('coffee', 'Cappuccino', 3.29),
-                        ('coffee', 'Caffe Latte', 3.39),
-                        ('tea', 'Green Tea', 2.99),
-                        ('tea', 'Wulong Tea', 2.89)''')
-    # Commit the insert
+def print_list():
+    conn = MySQLdb.connect('localhost', 'pi', 'pi', 'dbtest')
+    global lh
+
+    file1 = open('/var/www/mypython-test/values.txt', 'r')
+    Lines = file1.readlines()
+    #print("LINES: ", Lines)
+
+    for line in Lines:
+        #print("Line: ", line)
+        li = list(line.split(","))
+        #print("LINE LIST: ", li)
+        cursor.execute("insert into cafe (category, name, price) values (%s, %s, %s)", (li))
+
     conn.commit()
 
     # Query all records
@@ -43,3 +35,25 @@ with conn:
     rows = cursor.fetchall()
     for row in rows:
         print('<p>' + str(row) + '</p>')   # Print HTML paragraphs
+    conn.close()    
+
+def commit_line():
+    global value_list
+    global lh
+    # TODO: add new values to a list, then instead print the list in execute
+    with open("/var/www/mypython-test/values.txt","a") as f:
+        f.write("tea,33,3.19\n")
+        f.write("tea,33,3.19\n")
+
+cursor = conn.cursor()
+# Create table
+cursor.execute('drop table if exists cafe')
+cursor.execute('''create table if not exists cafe (
+                    id int unsigned not null auto_increment,
+                    category enum('tea', 'coffee') not null,
+                    name varchar(50) not null,
+                    price varchar(50) not null,
+                    primary key (id)
+                  )''')
+# Insert rows
+print_list()
