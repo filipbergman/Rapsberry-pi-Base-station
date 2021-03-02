@@ -10,12 +10,6 @@ import numpy as np
 import atexit
 import ipaddress
 
-import sys
-# sys.path is a list of absolute path strings
-sys.path.append('/var/www/mypython-test')
-
-import index
-
 RADIO_FREQ_MHZR = 868.0  # Frequency of the radio in Mhz. Must match your
 RADIO_FREQ_MHZT = 869.0
 
@@ -51,9 +45,6 @@ rfm9xT.ack_retries = 1
 #rfm9xT.signal_bandwidth = 125000
 counterT = 0
 
-import MySQLdb
-conn = MySQLdb.connect('localhost', 'pi', 'pi', 'dbtest')
-
 iface= 'tun0'
 tun = TunTap(nic_type="Tun", nic_name="tun0")
 tun.config(ip="192.168.2.15", mask="255.255.255.0", gateway="192.168.0.1")
@@ -73,58 +64,48 @@ ipList.append(this_ip_bits)
 ipList.append(base1_bits)
 ipList.append(test1_bits)
 
-# Set up UDP tunnel
-RECEIVER_IP = "192.168.0.170" # Should be receiver's IP on the local network
-MY_IP = "192.168.0.193" # Should be this node's IP on the local network
-UDP_PORT = 4003
-
-tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-rx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-rx_sock.bind((MY_IP, UDP_PORT))
 
 def exit_handler():
     tun.close()
 
 def transmit_message(message):
-    tx_sock.sendto(message, (RECEIVER_IP, UDP_PORT))
+    #tx_sock.sendto(message, (RECEIVER_IP, UDP_PORT))
+    rfm9xT.send(message)
 
 def transmit():
     while True:
         buf= tun.read(1024)
-        #print("TUN BUFFER: ", buf)
-        tx_sock.sendto( buf, (RECEIVER_IP, UDP_PORT))
+        print("TUN BUFFER: ", buf)
+        #buffer = bytes("startup message nr {} from pi 17 node {} ".format(counterT, rfm9xT.node), "UTF-8")
+        #tx_sock.sendto( buf, (RECEIVER_IP, UDP_PORT))
+        rfm9xT.send(buf)
 
 def receive():
     while True:
-        rcvd, addr = rx_sock.recvfrom(1024)
-        if rcvd is not None:
+        #rcvd, addr = rx_sock.recvfrom(1024)
+        packet = rfm9xR.receive(with_header=True, timeout=5)
+        print("Received: ", packet)
+
+        if packet is not None:
             # If ipv4 packet, write to tun interface:
-            rcvd_hex = rcvd.hex()
-            print("hex: ", rcvd_hex[:2])
-            if rcvd_hex[:2] == "45": 
+            
+            packet_hex = packet.hex()
+            print("hex: ", packet_hex)
+            if packet_hex[:2] != "03": 
                 print("WRITE TO TUN")
-                tun.write(rcvd)
-            elif rcvd_hex[:2] == "31":
-                # if control packet:
-                rcvd = rcvd.decode()
-                print("Handshake1")
-                control_packet(rcvd[0], rcvd[1:])
-            elif rcvd_hex[:2] == "30":
-                # if data packet:
-                rcvd = rcvd.decode()
-                print("Data packet")
-                control_packet(rcvd[0], rcvd[1:])
+                tun.write(packet)
+            elif packet_hex[:2] == "03":
+                # if not ip packet, decode:
+                packet = packet.decode()
+                handshake(packet[4], packet[5:])
                 
 
-def control_packet(frame_type, data):
-    print("RECEIVED")
+def handshake(frame_type, data):
     print("FRAME TYPE: ", frame_type)
     print("data: ", data)
 
     if frame_type == "0":
         print("\nData plane\n")
-        index.commit_line()
-        
     elif frame_type == "1":
         print("\nControl plane\n")
         if data not in ipList:
@@ -134,6 +115,8 @@ def control_packet(frame_type, data):
             transmit_message(f2)
         elif data in ipList:
             print("IP ALREADY EXISTS")
+
+
 
 class frame:
     frame_type = 0
@@ -148,7 +131,6 @@ class frame:
         frame = format(self.frame_type, "b")
         data_int = int(self.data)
         data_bit = format(data_int, "032b")
-        print("DATA_BIT: ", data_bit)
         frame += data_bit
         return frame.encode()
 

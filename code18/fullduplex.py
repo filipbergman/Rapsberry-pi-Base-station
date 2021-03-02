@@ -47,8 +47,9 @@ def transmit(counterT):
 
     while True:
         # send a broadcast message from my_node with ID = counter
+        
         buffer = bytes("startup message nr {} from pi 17 node {} ".format(counterT, rfm9xT.node), "UTF-8")
-        sent = rfm9xT.send(buffer)    
+        sent = rfm9xT.send(buffer)
         transmitted.append(len(buffer))
         counterT = counterT + 1
         if time.monotonic() - start_transmit >= 1:
@@ -63,7 +64,7 @@ def receive():
     while True:
         packet = rfm9xR.receive(with_header=True, timeout=5)
         if packet is not None:
-            #print("Received (raw header):", [hex(x) for x in packet[0:4]])
+            print("Received packet:", packet)
             print("Received (raw payload): {0}".format(packet[4:]))
             print("Received RSSI: {0}".format(rfm9xR.last_rssi))
             received.append(len(packet))
