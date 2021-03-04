@@ -58,20 +58,14 @@ iface= 'tun0'
 tun = TunTap(nic_type="Tun", nic_name="tun0")
 tun.config(ip="192.168.2.15", mask="255.255.255.0", gateway="192.168.0.1")
 
-
 this_ip = ipaddress.IPv4Address('192.168.2.15')
-this_ip_bits = format(int(this_ip), "032b")
-
 base1 = ipaddress.IPv4Address('192.168.2.16')
-base1_bits = format(int(base1), "032b")
-
 test1 = ipaddress.IPv4Address('192.168.2.2')
-test1_bits = format(int(test1), "032b")
 
 ipList = []
-ipList.append(this_ip_bits)
-ipList.append(base1_bits)
-ipList.append(test1_bits)
+ipList.append(this_ip)
+ipList.append(base1)
+ipList.append(test1)
 
 # Set up UDP tunnel
 RECEIVER_IP = "192.168.0.170" # Should be receiver's IP on the local network
@@ -98,16 +92,16 @@ def receive():
     while True:
         rcvd, addr = rx_sock.recvfrom(1024)
         if rcvd is not None:
-            # If ipv4 packet, write to tun interface:
+            
             rcvd_hex = rcvd.hex()
             print("hex: ", rcvd_hex[:2])
-            if rcvd_hex[:2] == "45": 
-                print("WRITE TO TUN")
+            if rcvd_hex[:2] == "45": # If ipv4 packet header, write to tun interface:
+                print("WRITE TO TUN", rcvd)
                 tun.write(rcvd)
             elif rcvd_hex[:2] == "31":
                 # if control packet:
                 rcvd = rcvd.decode()
-                print("Handshake1")
+                print("Handshake")
                 control_packet(rcvd[0], rcvd[1:])
             elif rcvd_hex[:2] == "30":
                 # if data packet:
@@ -123,18 +117,35 @@ def control_packet(frame_type, data):
 
     if frame_type == "0":
         print("\nData plane\n")
-        index.commit_line()
+        index.commit_line(data)
         
     elif frame_type == "1":
         print("\nControl plane\n")
-        if data not in ipList:
-            print("UNIQUE IP")
-            f = frame(frame_type, data)
-            f2 = f.frame_from_bits()
-            transmit_message(f2)
-        elif data in ipList:
-            print("IP ALREADY EXISTS")
+        tun_ip = ""
+        for i in range(0, 4):
+            tun_ip += str(int(data[i*8:(i*8)+8], 2)) # Translates each octet from bits to decimal
+            if i != 3:
+                tun_ip += "."
+        tun_ip = ipaddress.IPv4Address(tun_ip)
+        print("RECEIVED IP: ", tun_ip)
 
+        if tun_ip not in ipList:
+            print("UNIQUE IP")
+            f = frame(int(frame_type), tun_ip)
+            f2 = f.createControlFrame()
+            transmit_message(f2)
+        elif tun_ip in ipList:
+            print("IP ALREADY EXISTS")
+            for i in range(10,254):
+                test_ip = "192.168.2." + str(i)
+                ipv4 = ipaddress.IPv4Address(test_ip)
+                if ipv4 not in ipList:
+                    print("FOUND UNIQUE IP")
+                    f = frame(int(frame_type), ipv4)
+                    f2 = f.createControlFrame()
+                    transmit_message(f2)
+                    break
+        
 class frame:
     frame_type = 0
     data = 0
@@ -155,6 +166,14 @@ class frame:
     def frame_from_bits(self):
         frame = self.frame_type
         frame += self.data
+        return frame.encode()
+
+    def createControlFrame(self): 
+        frame = format(self.frame_type, "b")
+        data_int = int(self.data)
+        data_bit = format(data_int, "032b")
+        print("DATA_BIT: ", data_bit)
+        frame += data_bit
         return frame.encode()
            
 if __name__ == "__main__":
